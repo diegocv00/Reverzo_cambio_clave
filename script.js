@@ -12,16 +12,40 @@ const messageEl = document.getElementById('message');
 const toggleP1 = document.getElementById('toggle-p1');
 const toggleP2 = document.getElementById('toggle-p2');
 
-// Pre-fill email if session exists
-async function attemptPrefillEmail() {
-    const { data: { user } } = await supabaseClient.auth.getUser();
-    if (user && user.email) {
-        emailInput.value = user.email;
-        emailInput.readOnly = true;
+let sessionInitialized = false;
+
+async function initializeAuthSession() {
+    let sessionFromUrl = false;
+
+    try {
+        if (window.location.hash.includes('access_token') || window.location.search.includes('access_token')) {
+            const { data, error } = await supabaseClient.auth.getSessionFromUrl({ storeSession: true });
+            if (error) {
+                console.warn('Error al procesar el token de recuperación en la URL:', error.message);
+            } else if (data?.session) {
+                sessionFromUrl = true;
+                window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
+            }
+        }
+
+        const { data: { user }, error } = await supabaseClient.auth.getUser();
+        if (error) {
+            console.warn('No hay sesión de autenticación activa:', error.message);
+        }
+        if (user?.email) {
+            emailInput.value = user.email;
+            emailInput.readOnly = true;
+        } else if (!sessionFromUrl && !window.location.hash && !window.location.search.includes('access_token')) {
+            console.warn('No se detectó token de recuperación en la URL.');
+        }
+    } catch (error) {
+        console.error('Error inicializando la sesión de autenticación:', error);
+    } finally {
+        sessionInitialized = true;
     }
 }
 
-attemptPrefillEmail();
+initializeAuthSession();
 
 // Show password functionality
 toggleP1.addEventListener('click', () => {
@@ -63,7 +87,11 @@ resetForm.addEventListener('submit', async (e) => {
     setLoading(true);
 
     try {
-        // Supabase will automatically pick up the access token from the URL hash
+        const { data: { user }, error: userError } = await supabaseClient.auth.getUser();
+        if (userError || !user) {
+            throw new Error('No hay sesión de autenticación activa. Vuelve a usar el enlace de restablecimiento que recibiste por correo.');
+        }
+
         const { error } = await supabaseClient.auth.updateUser({
             password: password
         });
