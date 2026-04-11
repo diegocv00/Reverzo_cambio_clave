@@ -118,4 +118,4 @@ window.addEventListener('load', () => {
     if (!window.location.hash && !window.location.search.includes('access_token')) {
         console.warn('No se detectó token de recuperación en la URL.');
     }
-});
+}); 
