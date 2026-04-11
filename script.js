@@ -15,39 +15,33 @@ const toggleP2 = document.getElementById('toggle-p2');
 let sessionInitialized = false;
 
 async function initializeAuthSession() {
-    let sessionFromUrl = false;
-
-    try {
-        if (window.location.hash.includes('access_token') || window.location.search.includes('access_token')) {
-            const { data, error } = await supabaseClient.auth.getSessionFromUrl({ storeSession: true });
-            if (error) {
-                console.warn('Error al procesar el token de recuperación en la URL:', error.message);
-            } else if (data?.session) {
-                sessionFromUrl = true;
-                window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
+    // Escuchar el evento PASSWORD_RECOVERY (Supabase v2)
+    supabaseClient.auth.onAuthStateChange(async (event, session) => {
+        if (event === 'PASSWORD_RECOVERY') {
+            sessionInitialized = true;
+            if (session?.user?.email) {
+                emailInput.value = session.user.email;
+                emailInput.readOnly = true;
             }
         }
+    });
 
+    // Fallback: verificar si ya hay una sesión activa
+    try {
         const { data: { user }, error } = await supabaseClient.auth.getUser();
-        if (error) {
-            console.warn('No hay sesión de autenticación activa:', error.message);
-        }
-        if (user?.email) {
+        if (!error && user?.email) {
             emailInput.value = user.email;
             emailInput.readOnly = true;
-        } else if (!sessionFromUrl && !window.location.hash && !window.location.search.includes('access_token')) {
-            console.warn('No se detectó token de recuperación en la URL.');
+            sessionInitialized = true;
         }
     } catch (error) {
-        console.error('Error inicializando la sesión de autenticación:', error);
-    } finally {
-        sessionInitialized = true;
+        console.warn('No hay sesión activa todavía:', error.message);
     }
 }
 
 initializeAuthSession();
 
-// Show password functionality
+// Mostrar/ocultar contraseña
 toggleP1.addEventListener('click', () => {
     const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
     passwordInput.setAttribute('type', type);
@@ -65,7 +59,7 @@ resetForm.addEventListener('submit', async (e) => {
     const password = passwordInput.value;
     const confirmPassword = confirmPasswordInput.value;
 
-    // Reset messages
+    // Limpiar mensajes previos
     messageEl.className = 'message';
     messageEl.textContent = '';
 
@@ -87,25 +81,18 @@ resetForm.addEventListener('submit', async (e) => {
     setLoading(true);
 
     try {
-        const { data: { user }, error: userError } = await supabaseClient.auth.getUser();
-        if (userError || !user) {
-            throw new Error('No hay sesión de autenticación activa. Vuelve a usar el enlace de restablecimiento que recibiste por correo.');
-        }
-
         const { error } = await supabaseClient.auth.updateUser({
             password: password
         });
 
-        if (error) {
-            throw error;
-        }
+        if (error) throw error;
 
         document.getElementById('reset-form').style.display = 'none';
         document.querySelector('.header').style.display = 'none';
         document.getElementById('success-state').style.display = 'block';
 
     } catch (error) {
-        console.error('Error updating password:', error);
+        console.error('Error al actualizar la contraseña:', error);
         showMessage('Hubo un error al actualizar la contraseña: ' + (error.message || 'Error desconocido'), 'error');
     } finally {
         setLoading(false);
@@ -127,10 +114,8 @@ function setLoading(isLoading) {
     }
 }
 
-// Optional: Dynamic greeting or check for token
 window.addEventListener('load', () => {
-    // If no token in URL, we could show a warning, but Supabase handles it mostly
-    if (!window.location.hash) {
+    if (!window.location.hash && !window.location.search.includes('access_token')) {
         console.warn('No se detectó token de recuperación en la URL.');
     }
 });
